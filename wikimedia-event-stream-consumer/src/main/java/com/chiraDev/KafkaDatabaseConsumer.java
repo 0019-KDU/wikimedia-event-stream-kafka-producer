@@ -6,30 +6,41 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 public class KafkaDatabaseConsumer {
 
-    private static final Logger LOGGER= LoggerFactory.getLogger(KafkaDatabaseConsumer.class);
+    private  static final Logger LOGGER = LoggerFactory.getLogger(KafkaDatabaseConsumer.class);
 
-    private WikimediaDataRepository wikimedaDataRepository;
+    private final WikimediaDataRepository wikimediaDataRepository;
 
     public KafkaDatabaseConsumer(WikimediaDataRepository wikimediaDataRepository) {
-        this.wikimedaDataRepository = wikimediaDataRepository;
+        this.wikimediaDataRepository = wikimediaDataRepository;
     }
 
     @KafkaListener(
             topics = "wikimedia_recentchange",
-            groupId = "myGroup" // Define a unique group ID to ensure proper ordering and fault tolerance.
+            groupId = "myGroup",
+            containerFactory = "kafkaListenerContainerFactory"  // Specify the batch-enabled container factory
     )
-    public void consume(String eventMessage) {
-        LOGGER.info(String.format("Event message received ->%s", eventMessage));
-        // Perform database operations here
+    @Transactional
+    public void consume(List<String> eventMessage) {
+        LOGGER.info("Event message received -> {}", eventMessage);
 
-        WikimediaData wikimediaData=new WikimediaData();
+        try {
+            // Persist the event message to the database
+            WikimediaData wikimediaData = new WikimediaData();
+            wikimediaData.setWikiEventData(eventMessage.toString());
+            wikimediaDataRepository.save(wikimediaData);
 
-        wikimediaData.setWikiEventData(eventMessage);
-
-        wikimedaDataRepository.save(wikimediaData);
+            LOGGER.info("Event message saved to database successfully.");
+        } catch (Exception e) {
+            // Handle errors gracefully
+            LOGGER.error("Error saving event message to database: {}", eventMessage, e);
+            // Depending on your use case, you may want to retry or perform other actions
+        }
     }
 }
